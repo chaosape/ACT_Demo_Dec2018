@@ -3,7 +3,7 @@
  * Company: Rockwell Collins
  * License: Air Force Open Source Agreement Version 1.0
  *
- * Terminology: 
+ * Terminology:
  *
  *  waypoint - Largely self-explanatory. We are only really using the number
  *  and NextWaypoint field in this data structure.
@@ -13,7 +13,7 @@
  *
  *  mission command segment - An array of unordered Waypoint data
  *  structure which is a subset of a mission command.
- *   
+ *
  */
 #ifndef __WAYPOINTMANAGERUTILS_H__
 #define __WAYPOINTMANAGERUTILS_H__
@@ -22,7 +22,7 @@
 #include <camkes.h>
 #endif /* __WAYPOINTMANAGERUTILS_TESTS__ */
 #include <stdio.h>
-#include "./CMASI/Waypoint.h"
+#include "Waypoint.h"
 
 bool AutoPilotMissionCommandSegment( Waypoint * ws /* mission
                                                       command. */

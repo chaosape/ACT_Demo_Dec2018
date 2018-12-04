@@ -552,8 +552,8 @@ void recv_map(const SW__Command_Impl * unused) {
   printf("FPLN:> Received command.\n");
 
   if(!missioncommand_sent) {
-  	printf("FPLN:< Sending mission.\n");
-    tb_flight_plan_write((tb_SW__Mission_Impl_container*) mission_command_data);
+  	printf("FPLN:! Would send send mission.\n");
+    /*tb_flight_plan_write((tb_SW__Mission_Impl_container*) mission_command_data);*/
     missioncommand_sent = true;
   }
 

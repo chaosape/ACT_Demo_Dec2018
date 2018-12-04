@@ -107,11 +107,15 @@ end RadioDriver.Impl;
 
 thread FlightPlanner
 	features
-		flight_plan: out data port Mission.Impl;
+		mission_new: out event port;
+		-- mission: requires data access Mission.Impl {
+		--		Access_Right => READ_WRITE;
+		-- };
+		mission_rcv: in event port;
+		
 		recv_map: in event data port Command.Impl  {
 			TB_SYS::Compute_Entrypoint_Source_Text => ("recv_map");
 		};
-		-- position_status: in event data port Coordinate.Impl;
     
 	properties
 		Source_Text => ("behavior/flightplanner.c");
@@ -128,10 +132,148 @@ end FlightPlanner.Impl;
   	
 thread WaypointManager
 	features
-		flight_plan: in data port Mission.Impl;
+		mission_new: in event port;
+		-- mission: requires data access Mission.Impl {
+		--		Access_Right => READ_WRITE;
+		-- };
+		mission_rcv: out event port;
+
 		waypoint: out event data port MissionWindow.Impl;
 		position_status: in event data port Coordinate.Impl;
+		
 	properties
+		Source_Text => 
+			(
+			"behavior/wm.c",
+			"behavior/WaypointManagerUtils.c",
+            "behavior/Polygon.c",
+            "behavior/NavigationAction.h",
+            "behavior/WaypointTransfer.h",
+            "behavior/AirVehicleConfiguration.h",
+            "behavior/LoiterAction.c",
+            "behavior/GimbalState.h",
+            "behavior/KeepOutZone.h",
+            "behavior/WeatherReport.h",
+            "behavior/PayloadAction.h",
+            "behavior/SessionStatus.c",
+            "behavior/SearchTask.h",
+            "behavior/Location3D.c",
+            "behavior/KeepOutZone.c",
+            "behavior/VideoStreamState.c",
+            "behavior/enums.h",
+            "behavior/GimbalConfiguration.h",
+            "behavior/GimbalConfiguration.c",
+            "behavior/PayloadAction.c",
+            "behavior/PayloadStowAction.c",
+            "behavior/RemoveEntities.h",
+            "behavior/KeyValuePair.h",
+            "behavior/lmcp.c",
+            "behavior/SearchTask.c",
+            "behavior/GimbalScanAction.h",
+            "behavior/Task.h",
+            "behavior/AutomationResponse.h",
+            "behavior/RemoveZones.c",
+            "behavior/MustFlyTask.c",
+            "behavior/Circle.h",
+            "behavior/VehicleAction.c",
+            "behavior/MissionCommand.c",
+            "behavior/RemoveTasks.c",
+            "behavior/OperatingRegion.h",
+            "behavior/AbstractGeometry.c",
+            "behavior/CameraAction.c",
+            "behavior/CameraConfiguration.c",
+            "behavior/LoiterTask.c",
+            "behavior/WaypointManagerUtils.h",
+            "behavior/AirVehicleState.c",
+            "behavior/ServiceStatus.h",
+            "behavior/GoToWaypointAction.c",
+            "behavior/GimbalState.c",
+            "behavior/GoToWaypointAction.h",
+            "behavior/FollowPathCommand.c",
+            "behavior/StopMovementAction.h",
+            "behavior/CameraAction.h",
+            "behavior/NavigationAction.c",
+            "behavior/KeepInZone.c",
+            "behavior/CameraConfiguration.h",
+            "behavior/WeatherReport.c",
+            "behavior/VehicleAction.h",
+            "behavior/VideoStreamConfiguration.h",
+            "behavior/PayloadStowAction.h",
+			"behavior/PathWaypoint.h",
+            "behavior/SessionStatus.h",
+            "behavior/Rectangle.h",
+            "behavior/GimballedPayloadState.h",
+            "behavior/PointSearchTask.c",
+            "behavior/EntityConfiguration.h",
+            "behavior/VideoStreamAction.c",
+            "behavior/LineSearchTask.h",
+            "behavior/PayloadConfiguration.h",
+            "behavior/AirVehicleState.h",
+            "behavior/GimbalStareAction.c",
+            "behavior/FlightDirectorAction.h",
+            "behavior/WaypointTransfer.c",
+            "behavior/conv.h",
+            "behavior/Waypoint.c",
+            "behavior/PayloadConfiguration.c",
+            "behavior/AbstractGeometry.h",
+            "behavior/AbstractZone.h",
+            "behavior/FlightProfile.h",
+            "behavior/VideoStreamState.h",
+            "behavior/PointSearchTask.h",
+            "behavior/PayloadState.c",
+            "behavior/StopMovementAction.c",
+            "behavior/LoiterAction.h",
+            "behavior/FlightDirectorAction.c",
+            "behavior/lmcp.h",
+            "behavior/EntityState.h",
+            "behavior/EntityState.c",
+            "behavior/AreaSearchTask.h",
+            "behavior/Circle.c",
+            "behavior/Wedge.h",
+            "behavior/MustFlyTask.h",
+            "behavior/PathWaypoint.c",
+            "behavior/RemoveEntities.c",
+            "behavior/LoiterTask.h",
+            "behavior/ServiceStatus.c",
+            "behavior/GimbalScanAction.c",
+            "behavior/AutomationResponse.c",
+            "behavior/FlightProfile.c",
+            "behavior/CameraState.c",
+            "behavior/Wedge.c",
+            "behavior/VideoStreamAction.h",
+            "behavior/GimbalAngleAction.h",
+            "behavior/KeyValuePair.c",
+            "behavior/AirVehicleConfiguration.c",
+            "behavior/VideoStreamConfiguration.c",
+            "behavior/AutomationRequest.h",
+            "behavior/AutomationRequest.c",
+            "behavior/AreaSearchTask.c",
+            "behavior/Task.c",
+            "behavior/struct_defines.h",
+            "behavior/Rectangle.c",
+            "behavior/GimballedPayloadState.c",
+            "behavior/FollowPathCommand.h",
+            "behavior/Polygon.h",
+            "behavior/MissionCommand.h",
+            "behavior/GimbalAngleAction.c",
+            "behavior/LineSearchTask.c",
+            "behavior/VehicleActionCommand.h",
+            "behavior/GimbalStareAction.h",
+            "behavior/OperatingRegion.c",
+            "behavior/RemoveZones.h",
+            "behavior/EntityConfiguration.c",
+            "behavior/PayloadState.h",
+            "behavior/CameraState.h",
+            "behavior/Waypoint.h",
+            "behavior/conv.c",
+            "behavior/Location3D.h",
+            "behavior/KeepInZone.h",
+            "behavior/RemoveTasks.h",
+            "behavior/OperatorSignal.h",
+            "behavior/AbstractZone.c",
+            "behavior/VehicleActionCommand.c",
+            "behavior/OperatorSignal.c"
+			);	
     	Dispatch_Protocol => Sporadic;
     	Priority => 200;
     	Stack_Size => 1024 Bytes;
@@ -167,6 +309,7 @@ end UARTDriver.Impl;
 			send_status: out event data port Coordinate.Impl;
 			waypoint: out event data port MissionWindow.Impl;
 			position_status: in event data port Coordinate.Impl;
+			
 	end MC_SW;
 
 
@@ -176,13 +319,18 @@ end UARTDriver.Impl;
 			FPLN: thread FlightPlanner.Impl;
 			WPM: thread WaypointManager.Impl;
 			UART: thread UARTDriver.Impl;
+			-- mission : data Mission.Impl {
+			--	TB_SYS::CAmkES_Owner_Thread => "FlightPlanner";
+			-- };
 		connections
+			c1: port FPLN.mission_new -> WPM.mission_new;
+			c2: port WPM.mission_rcv -> FPLN.mission_rcv;
 			c3: port RADIO.recv_map_out -> FPLN.recv_map;
-			c5: port FPLN.flight_plan -> WPM.flight_plan;
 			c6: port WPM.waypoint -> UART.waypoint_in;
 			c7: port UART.position_status_out -> WPM.position_status;
 			-- c8: port UART.position_status_out -> FPLN.position_status;
-			
+			-- d1: data access mission -> FPLN.mission;
+			-- d2: data access mission -> WPM.mission;
 	end MC_SW.Impl;
 	
 	
