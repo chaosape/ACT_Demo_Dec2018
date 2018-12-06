@@ -1,9 +1,9 @@
 #include <camkes.h>
 #include <stdio.h>
-#include <tb_PROC_HW_types.h>
 #include <assert.h>
- 
-#define INTR_OP(X) assert(X==0)
+#include "lmcp.h"
+#include "WaypointManagerUtils.h"
+typedef SW__UART_Packet_Impl UARTPacket;
 
 static unsigned char mission_command_data[] = {
   0x4c, 0x4d, 0x43, 0x50, 0x00, 0x00, 0x19, 0x11, 0x01, 0x43, 0x4d, 0x41,
@@ -545,21 +545,192 @@ static unsigned char mission_command_data[] = {
 };
 static unsigned int mission_command_data_len = 6429;
 
+#define MAX_AP_WAYPOINTS 8
+#define DEBUG(fmt,args...)  ;//  printf("%s,%s,%i:"fmt,__FUNCTION__,"waypoint_manager.c",__LINE__,##args)
 
-static bool missioncommand_sent = false;
+#define MISSION_COMMAND_SIZE (4096*32)
+#define UART_PACKET_SZ 255
+#define WIN_SZ 8
 
-void recv_map(const SW__Command_Impl * unused) {
 
-  	printf("FPLN:< Command.\n");
+#define MUTEX_OP(X) assert(X==0)
+#define SEM_OP(X) assert(X==0)
+#define INTR_OP(X) assert(X==0)
 
-  	if(!missioncommand_sent) {
-  		bool dummy;
-  		printf("FPLN:> New mission notification.\n");
-  		assert(tb_mission_new_enqueue(&dummy)==true);
-    	missioncommand_sent = true;
-  	}
+
+static lmcp_object * mc = NULL;
+static Waypoint * mcwps = NULL;
+static lmcp_object * airstat = NULL;
+static uint32_t mcwpslen = 0;
+static MissionCommand win;
+static Waypoint winwps[WIN_SZ];
+static uint64_t current_waypoint = 0;
+static bool current_waypoint_new = false;
+
+uint32_t Checksum(const uint8_t * p, const size_t len)
+{
+  uint32_t sum = 0;
+
+  /* assumption: p is not NULL. */
+  assert(p != NULL);
+
+  for (size_t i = 0; i < len; i++) {
+    sum += (uint32_t) p[i];
+  }
+  return sum;
 }
 
-void mission_rcv(const bool * __unused__) {
-	printf("FPLN:< Received mission notification.\n");
+void send_win() {
+
+  UARTPacket packet;
+  uint32_t netmsgsize;
+  uint32_t chksum;
+  uint32_t msgsize =
+    lmcp_msgsize((lmcp_object*)&win)
+    + sizeof(netmsgsize) /* Message length */
+    + sizeof(chksum); /* checksum */
+  uint32_t written = 0;
+
+  /* Allocate memory for message. */
+  uint8_t * msg = (uint8_t*)malloc(msgsize);
+  memset(msg,0,msgsize);
+
+  /* Store the full length of the message as a network order numeral
+     at the begining of the message. */
+  netmsgsize = htonl(msgsize);
+  memcpy(msg,(uint8_t*)&netmsgsize,sizeof(netmsgsize));
+
+
+
+  /* Store the message in memory after the length. */
+  lmcp_make_msg(msg+sizeof(netmsgsize),(lmcp_object*)&win);
+
+  /* Calculate checksum and store it at the end of the message. */
+  chksum = Checksum(msg+sizeof(netmsgsize),
+		    msgsize-(sizeof(chksum)+sizeof(netmsgsize)));
+  *((uint32_t *)(msg + msgsize - sizeof(chksum))) = htonl(chksum);
+
+  /*printf(
+	 "WM: Sending window with a size of %u + %u (message size header)"
+	 " + %u (checksum).\n"
+	 , msgsize-(sizeof(chksum)+sizeof(netmsgsize))
+	 , sizeof(netmsgsize)
+	 , sizeof(chksum));*/
+
+  /*hexDump("WM: msg =\n", msg, msgsize);*/
+  while(written<msgsize) {
+
+    memset((uint8_t*)&packet,0,sizeof(packet));
+    packet.buf_len =
+      (msgsize-written) < UART_PACKET_SZ ? (msgsize-written) : UART_PACKET_SZ;
+    memcpy(packet.buf,msg+written,packet.buf_len);
+    //printf("WM: Written %u bytes, writing %u bytes.\n",written,packet.buf_len);
+    assert(tb_send_uartpkt_enqueue(&packet)==true);
+    written += packet.buf_len;
+  }
+  //printf("WM: Completed sending window.\n");
+  free(msg);
+}
+
+void handle_mission_command() {
+
+  uint8_t * tmp_mission = (uint8_t*)mission_command_data;
+  MissionCommand * local_mc = NULL;
+  unsigned int i;
+
+  if(mc != NULL) {
+    lmcp_free((lmcp_object*)mc);
+
+    mc = NULL;
+  }
+
+  if(mcwps != NULL) {
+    free(mcwps);
+    mcwps = NULL;
+    mcwpslen = 0;
+  }
+
+  int err = lmcp_process_msg((uint8_t **)&tmp_mission,MISSION_COMMAND_SIZE,&mc);
+
+  if(mc->type != 36 || err == -1) {
+    printf("WM: Bad mission command!\n");
+    lmcp_free(mc);
+    mc = NULL;
+    return;
+  }
+
+  mcwpslen = ((MissionCommand*)mc)->WaypointList_ai.length;
+  mcwps = (Waypoint*)malloc(sizeof(Waypoint)*mcwpslen);
+  for(i = 0; i < mcwpslen; i++) {
+    mcwps[i] = *(((MissionCommand*)mc)->WaypointList[i]);
+    /*printf("WM:! (mcwps[%u].Number, mcwps[%u].NextWaypoint) = (%lu,%lu)\n"
+    	  , i
+    	  , i
+    	  , mcwps[i].Number
+    	  , mcwps[i].NextWaypoint);*/
+  }
+
+
+  Waypoint ** tmp = win.WaypointList;
+  win = *((MissionCommand*)mc);
+  win.WaypointList = tmp;
+  win.WaypointList_ai.length = WIN_SZ;
+
+  assert(
+	 AutoPilotMissionCommandSegment
+	 (
+	  mcwps,
+	  mcwpslen,
+	  ((MissionCommand*)mc)->FirstWaypoint,
+	  winwps,
+	  WIN_SZ
+	 )
+	 == true
+	 );
+
+  send_win();
+
+  return;
+}
+
+uint64_t nw_order(const uint64_t in) {
+    unsigned char out[8] = {in>>56,in>>48,in>>40,in>>32,in>>24,in>>16,in>>8,in};
+    return *(uint64_t*)out;
+}
+
+ void init(const int64_t * __unused__) {
+
+    unsigned int i;
+    win.WaypointList = (Waypoint**)malloc(sizeof(Waypoint*)*WIN_SZ);
+    for(i = 0; i < WIN_SZ; i++) {
+      win.WaypointList[i] = &(winwps[i]);
+    }
+    win.WaypointList_ai.length = WIN_SZ;
+
+    return;
+}
+
+void mission_new(const bool * __unused__) {
+	bool dummy;
+	printf("WM:< New mission notification.\n");
+    handle_mission_command();
+	printf("WM:> Received mission notification.\n");
+	tb_mission_rcv_enqueue(&dummy);
+}
+
+void tracking_id(const uint64_t * nid) {
+	printf("WM:< Received %lu as the next id.\n", *nid);
+	assert(
+	     AutoPilotMissionCommandSegment
+	     (
+	      mcwps,
+	      mcwpslen,
+	      *nid,
+	      winwps,
+	      WIN_SZ
+		)
+	     == true
+	 );
+     win.FirstWaypoint = current_waypoint;
+     send_win();
 }

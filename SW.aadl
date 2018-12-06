@@ -69,23 +69,26 @@ data implementation Mission.Impl
     	Data_Model::Base_Type => (classifier (Base_Types::Unsigned_8));
     	Data_Model::Dimension => (6429);
 end Mission.Impl;
-		
--- The Mission Window is a list of waypoints that the Waypoint Manager assembles from
--- the Mission.
--- For this implementation, we fix the size of the Mission Window to 4 waypoints.
--- The crc value is an abstraction, which, if true, tells us that the data has not
--- been corrupted.
-data MissionWindow	  
-end MissionWindow;
-		
-data implementation MissionWindow.Impl
+
+data UART_Buffer
+end UART_Buffer;
+
+data implementation UART_Buffer.Impl
+	properties
+		Data_Model::Data_Representation => Array;
+		Data_Model::Base_Type => (classifier (Base_Types::Unsigned_8));
+		Data_Model::Dimension => (255);
+end UART_Buffer.Impl;
+
+data UART_Packet
+end UART_Packet;
+
+data implementation UART_Packet.Impl
 	subcomponents
-		wp1: data Coordinate.Impl;
-		wp2: data Coordinate.Impl;
-		wp3: data Coordinate.Impl;
-		wp4: data Coordinate.Impl;
-		crc: data Base_Types::Boolean;
-end MissionWindow.Impl;
+		buf: data UART_Buffer.Impl;
+		buf_len: data Base_Types::Integer_32;
+end UART_Packet.Impl;
+
 	
 thread RadioDriver
 	features
@@ -99,7 +102,7 @@ thread RadioDriver
       	Compute_Execution_Time => 10 us .. 100 us;
       	Period => 1 ms;
       	TB_SYS::Sends_Events_To => "{{}}";
-      	Initialize_Entrypoint_Source_Text => "radio_driver_component_init";
+      	Initialize_Entrypoint_Source_Text => "init";
 end RadioDriver;
 	
 thread implementation RadioDriver.Impl
@@ -107,11 +110,13 @@ end RadioDriver.Impl;
 
 thread FlightPlanner
 	features
-		mission_new: out event port;
+		mission_new: out event data port Base_Types::Boolean;
 		-- mission: requires data access Mission.Impl {
 		--		Access_Right => READ_WRITE;
 		-- };
-		mission_rcv: in event port;
+		mission_rcv: in event data port Base_Types::Boolean {
+			TB_SYS::Compute_Entrypoint_Source_Text => ("mission_rcv");
+		};
 		
 		recv_map: in event data port Command.Impl  {
 			TB_SYS::Compute_Entrypoint_Source_Text => ("recv_map");
@@ -132,19 +137,22 @@ end FlightPlanner.Impl;
   	
 thread WaypointManager
 	features
-		mission_new: in event port;
+		mission_new: in event data port Base_Types::Boolean {
+			TB_SYS::Compute_Entrypoint_Source_Text => ("mission_new");
+		};
 		-- mission: requires data access Mission.Impl {
 		--		Access_Right => READ_WRITE;
 		-- };
-		mission_rcv: out event port;
-
-		waypoint: out event data port MissionWindow.Impl;
-		position_status: in event data port Coordinate.Impl;
+		mission_rcv: out event data port Base_Types::Boolean;
+		send_uartpkt: out event data port UART_Packet.Impl;
+		tracking_id: in event data port Base_Types::Integer_64 {
+			TB_SYS::Compute_Entrypoint_Source_Text => ("tracking_id");
+		};
 		
 	properties
 		Source_Text => 
 			(
-			"behavior/wm.c",
+			"behavior/waypointmanager.c",
 			"behavior/WaypointManagerUtils.c",
             "behavior/Polygon.c",
             "behavior/NavigationAction.h",
@@ -280,6 +288,7 @@ thread WaypointManager
     	Compute_Execution_Time => 10 us .. 100 us;
     	Period => 1 ms;
     	TB_SYS::Sends_Events_To => "{{}}";  
+    	Initialize_Entrypoint_Source_Text => "init";
 end WaypointManager;
 	
 thread implementation WaypointManager.Impl
@@ -287,51 +296,50 @@ end WaypointManager.Impl;
 		
 thread UARTDriver
 	features
-		position_status_out: out event data port Coordinate.Impl;
-		waypoint_in: in event data port MissionWindow.Impl;
+		recv_uartpkt: in event data port UART_Packet.Impl {
+			TB_SYS::Compute_Entrypoint_Source_Text => ("recv_uartpkt");
+			Queue_Size => 23388;
+		};
+		tracking_id: out event data port Base_Types::Integer_64;
 			
 	properties
+		Source_Text => ("behavior/uartdriver.c");
     	Dispatch_Protocol => Sporadic;
      	Priority => 200;
     	Stack_Size => 1024 Bytes;
     	Compute_Execution_Time => 10 us .. 100 us;
     	Period => 1 ms;
-    	TB_SYS::Sends_Events_To => "{{}}";  			
+    	TB_SYS::Sends_Events_To => "{{}}";
+    	Initialize_Entrypoint_Source_Text => "init";		
 end UARTDriver;	
 	
 thread implementation UARTDriver.Impl		
 end UARTDriver.Impl;
 	
 
-	process MC_SW
-		features
-			recv_map: in event data port Command.Impl;
-			send_status: out event data port Coordinate.Impl;
-			waypoint: out event data port MissionWindow.Impl;
-			position_status: in event data port Coordinate.Impl;
-			
-	end MC_SW;
+process MC_SW
+end MC_SW;
 
 
-	process implementation MC_SW.Impl
-		subcomponents
-			RADIO: thread RadioDriver.Impl;
-			FPLN: thread FlightPlanner.Impl;
-			WPM: thread WaypointManager.Impl;
-			UART: thread UARTDriver.Impl;
-			-- mission : data Mission.Impl {
-			--	TB_SYS::CAmkES_Owner_Thread => "FlightPlanner";
-			-- };
-		connections
-			c1: port FPLN.mission_new -> WPM.mission_new;
-			c2: port WPM.mission_rcv -> FPLN.mission_rcv;
-			c3: port RADIO.recv_map_out -> FPLN.recv_map;
-			c6: port WPM.waypoint -> UART.waypoint_in;
-			c7: port UART.position_status_out -> WPM.position_status;
-			-- c8: port UART.position_status_out -> FPLN.position_status;
-			-- d1: data access mission -> FPLN.mission;
-			-- d2: data access mission -> WPM.mission;
-	end MC_SW.Impl;
+process implementation MC_SW.Impl
+	subcomponents
+		RADIO: thread RadioDriver.Impl;
+		FPLN: thread FlightPlanner.Impl;
+		WPM: thread WaypointManager.Impl;
+		UART: thread UARTDriver.Impl;
+		-- mission : data Mission.Impl {
+		--	TB_SYS::CAmkES_Owner_Thread => "FlightPlanner";
+		-- };
+	connections
+		c1: port FPLN.mission_new -> WPM.mission_new;
+		c2: port WPM.mission_rcv -> FPLN.mission_rcv;
+		c3: port RADIO.recv_map_out -> FPLN.recv_map;
+		c6: port WPM.send_uartpkt -> UART.recv_uartpkt;
+		c7: port UART.tracking_id -> WPM.tracking_id;
+		-- c8: port UART.position_status_out -> FPLN.position_status;
+		-- d1: data access mission -> FPLN.mission;
+		-- d2: data access mission -> WPM.mission;
+end MC_SW.Impl;
 	
 	
 

@@ -17,7 +17,6 @@
  */
 #ifndef __WAYPOINTMANAGERUTILS_H__
 #define __WAYPOINTMANAGERUTILS_H__
-#include <stdbool.h>
 #ifndef __WAYPOINTMANAGERUTILS_TESTS__
 #include <camkes.h>
 #endif /* __WAYPOINTMANAGERUTILS_TESTS__ */

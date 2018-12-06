@@ -36,7 +36,6 @@ public
 		features
 			MCA: requires bus access MC_Bus.Impl;
 			UARTA: requires bus access UAV::Serial.Impl;
-			waypoint_in: in event data port SW::MissionWindow.Impl;
 			waypoint_out: out event data port MISSING_TYPE.Impl;
 			position_status_in: in event data port MISSING_TYPE.Impl;
 			position_status_out: out event data port SW::Coordinate.Impl;
